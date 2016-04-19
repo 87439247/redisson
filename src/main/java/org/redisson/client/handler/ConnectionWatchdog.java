@@ -23,7 +23,6 @@ import org.redisson.client.RedisException;
 import org.redisson.client.RedisPubSubConnection;
 import org.redisson.client.codec.Codec;
 import org.redisson.client.protocol.CommandData;
-import org.redisson.client.protocol.QueueCommand;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -37,6 +36,7 @@ import io.netty.channel.EventLoopGroup;
 import io.netty.channel.group.ChannelGroup;
 import io.netty.util.concurrent.Future;
 import io.netty.util.concurrent.FutureListener;
+import io.netty.util.concurrent.ImmediateEventExecutor;
 import io.netty.util.concurrent.Promise;
 
 public class ConnectionWatchdog extends ChannelInboundHandlerAdapter {
@@ -117,7 +117,7 @@ public class ConnectionWatchdog extends ChannelInboundHandlerAdapter {
         if (connection.getReconnectListener() != null) {
             // new connection used only for channel init
             RedisConnection rc = new RedisConnection(connection.getRedisClient(), channel);
-            Promise<RedisConnection> connectionFuture = bootstrap.group().next().newPromise();
+            Promise<RedisConnection> connectionFuture = ImmediateEventExecutor.INSTANCE.newPromise();
             connection.getReconnectListener().onReconnect(rc, connectionFuture);
             connectionFuture.addListener(new FutureListener<RedisConnection>() {
                 @Override
@@ -150,26 +150,28 @@ public class ConnectionWatchdog extends ChannelInboundHandlerAdapter {
     }
 
     private void refresh(RedisConnection connection, Channel channel) {
-        CommandData commandData = connection.getCurrentCommand();
+        CommandData<?, ?> commandData = connection.getCurrentCommand();
         connection.updateChannel(channel);
         
         reattachBlockingQueue(connection, commandData);            
         reattachPubSub(connection);
     }
 
-    private void reattachBlockingQueue(RedisConnection connection, final CommandData commandData) {
-        if (commandData != null 
-                && QueueCommand.TIMEOUTLESS_COMMANDS.contains(commandData.getCommand().getName())) {
-            ChannelFuture future = connection.send(commandData);
-            future.addListener(new ChannelFutureListener() {
-                @Override
-                public void operationComplete(ChannelFuture future) throws Exception {
-                    if (!future.isSuccess()) {
-                        log.error("Can't reconnect blocking queue to new connection {}", commandData);
-                    }
-                }
-            });
+    private void reattachBlockingQueue(RedisConnection connection, final CommandData<?, ?> commandData) {
+        if (commandData == null 
+                || !commandData.isBlockingCommand()) {
+            return;
         }
+
+        ChannelFuture future = connection.send(commandData);
+        future.addListener(new ChannelFutureListener() {
+            @Override
+            public void operationComplete(ChannelFuture future) throws Exception {
+                if (!future.isSuccess()) {
+                    log.error("Can't reconnect blocking queue to new connection. {}", commandData);
+                }
+            }
+        });
     }
 
 }

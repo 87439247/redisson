@@ -13,35 +13,10 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.redisson.connection;
+package org.redisson.client.protocol.decoder;
 
-/**
- *
- * @author Nikita Koksharov
- *
- * @param <V>
- */
-public class FastSuccessFuture<V> extends FastCompleteFuture<V> {
+public interface DecoderState {
 
-    private final V result;
-
-    public FastSuccessFuture(V result) {
-        this.result = result;
-    }
-
-    @Override
-    public Throwable cause() {
-        return null;
-    }
-
-    @Override
-    public boolean isSuccess() {
-        return true;
-    }
-
-    @Override
-    public V getNow() {
-        return result;
-    }
-
+    DecoderState copy();
+    
 }
